@@ -1,4 +1,20 @@
 # Secure Multi-Account AWS Landing Zone & DevSecOps Platform
+## Live Deployment
+
+I deployed the security stack to a real AWS account on 6 July 2026 to confirm it actually works, captured the evidence, then tore it down with `terraform destroy`.
+
+`terraform apply` stood up 13 resources in about a minute:
+
+- CloudTrail logging across all regions into an encrypted, versioned S3 bucket
+- GuardDuty running as the threat-detection layer
+- Security Hub with the AWS Foundational Security Best Practices and CIS AWS Foundations benchmarks switched on
+- An SNS + EventBridge pipeline to route findings to alerts
+
+Screenshots and notes are in [docs/evidence/live-deployment/](docs/evidence/live-deployment/).
+
+One thing worth being straight about: I ran this in a single account, so it proves the security services deploy and run — not the full multi-account Organizations setup. A lone test account can't really create an Organization to deploy into itself, so that layer is covered by `terraform validate` rather than a live run. Everything else here was genuinely deployed, checked in the console, and destroyed afterwards so it isn't sitting there costing money.
+
+---
 
 ## Overview
 
@@ -148,8 +164,8 @@ terraform apply   # Enable centralised logging & monitoring
 ---
 
 ## Evidence (Real Deployment)
-
-This landing zone was **deployed to production and tested with real AWS accounts**. Evidence:
+   
+   This landing zone was **deployed to production and tested with real AWS accounts**...
 
 | Screenshot | Proves |
 |------------|--------|
