@@ -1,0 +1,58 @@
+# -----------------------------
+# Secrets / env
+# -----------------------------
+**/.env
+.env
+.env.*
+!.env.example
+
+# -----------------------------
+# Terraform
+# -----------------------------
+**/*.tfstate
+**/*.tfstate.*
+crash.log
+crash.*.log
+
+.terraform/
+**/.terraform/
+
+terraform.tfvars
+*.auto.tfvars
+*.auto.tfvars.json
+
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+.terraformrc
+terraform.rc
+
+# Optional: keep lockfile (recommended) OR ignore it (choose one)
+# .terraform.lock.hcl
+
+# -----------------------------
+# Python
+# -----------------------------
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+
+.venv/
+venv/
+ENV/
+env/
+
+*.log
+.pytest_cache/
+.mypy_cache/
+
+# -----------------------------
+# OS / Editor
+# -----------------------------
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

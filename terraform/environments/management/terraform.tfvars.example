@@ -1,0 +1,14 @@
+# Management Account — terraform.tfvars example
+# Copy this file to terraform.tfvars and fill in your values
+
+aws_region = "us-east-1"
+
+project_name = "secure-multi-account-landing-zone"
+
+environment = "production"
+
+owner = "platform-engineering"
+
+# External ID for cross-account Terraform role assumption
+# Generate a random string, e.g.: openssl rand -hex 16
+terraform_external_id = "your-external-id-here"

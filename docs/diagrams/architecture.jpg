@@ -1,0 +1,104 @@
+# secure-aws-landing-zone-devsecops
+
+## Overview
+
+This project establishes a secure, enterprise-grade AWS cloud foundation using a multi-account structure, zero-trust networking, centralized logging, and a fully automated DevSecOps pipeline. It integrates with Azure Entra ID for federated SSO, enforces least privilege and encryption everywhere, and demonstrates automated threat detection, response, and compliance.
+
+**What sets this project apart:**  
+It leverages Amazon Bedrock to add AI-powered automation—summarizing security findings, generating incident reports, and enabling natural language Q&A on runbooks and security best practices. This makes the platform not only secure by default, but also intelligent and future-ready.
+
+
+
+## Key Features
+
+- **Multi-Account Structure:** Management, Security, and Workloads accounts via AWS Organizations & Control Tower.
+- **Federated SSO:** Azure Entra ID integration with IAM Identity Center.
+- **Zero Trust Networking:** Private subnets, VPC endpoints, Network Firewall, WAF.
+- **Centralized Logging:** Org-wide CloudTrail, AWS Config, S3 with KMS and Object Lock.
+- **Security Operations:** Security Hub, GuardDuty, Inspector, Macie, Security Lake, auto-remediation.
+- **DevSecOps Pipeline:** Terraform IaC, security scanning, policy as code, automated reporting.
+- **Demo Workload:** API Gateway → Lambda → DynamoDB, fully secured.
+- **AI Automation (Amazon Bedrock):** Summarize security findings, generate incident reports, and answer natural language queries on runbooks.
+- **Compliance & Governance:** SCPs, Config rules, CIS/FSBP mapping, runbooks, and dashboards.
+
+## Repo map (where things are)
+- `docs/diagrams/` — architecture diagrams (PNG/JPG + editable source)
+- `docs/decisions/` — ADRs (why key choices were made)
+- `docs/runbooks/` — incident response playbooks
+- `docs/evidence/` — screenshots/log excerpts (audit-style evidence)
+- `infra/terraform/` — IaC scaffolding (placeholders until implemented)
+
+## Architecture Diagram
+
+![Architecture](./architecture.jpg)
+
+## How decisions are documented (ADR method)
+
+We document key architecture decisions using ADRs. Each ADR answers:
+1. Which alternatives were considered?
+2. Why this choice was selected (security / operability / cost / delivery speed)?
+3. How trade-offs were balanced (performance vs cost vs security)?
+
+![Decision-making process](./docs/evidence/decision-making-process.jpg)
+
+See: ./docs/decisions/
+
+
+## Evidence (portfolio)
+- Architecture diagram: docs/diagrams/architecture.jpg
+- ADRs: docs/decisions/
+- Runbooks: docs/runbooks/
+- Evidence (screenshots/logs): docs/evidence/ (to be added)
+## Business perspective (value + cost)
+
+### Why a business would pay for this
+This platform reduces *real operational risk* and improves *audit readiness*:
+
+- **Lower breach likelihood** via centralized controls (SCP guardrails, least privilege, continuous monitoring)
+- **Faster incident response** with Security Hub + GuardDuty/Inspector findings feeding runbooks
+- **Audit/compliance efficiency** via centralized evidence (CloudTrail/Config + immutable S3 archive patterns)
+- **Developer velocity with safety** (DevSecOps pipeline + policy-as-code + supply-chain scanning)
+- **Executive visibility** through consistent security reporting across accounts/environments
+
+### Monthly cost model (what drives spend)
+Monthly running cost is dominated by a small set of drivers:
+
+1) **Logging & retention**
+   - CloudTrail / Config / VPC Flow Logs / Security Lake storage & query
+   - Longer retention + higher log volume => higher cost
+
+2) **Security services**
+   - Findings volume + number of resources/accounts affects tools like GuardDuty, Inspector, Macie, Security Hub
+
+3) **Network egress / NAT**
+   - NAT Gateway + data processing can become a major cost in private subnet designs
+
+4) **CI/CD + scanning**
+   - Artifact storage, container scanning, SBOM generation, pipeline runs
+
+5) **AI automation (optional)**
+   - If enabled, cost depends on: how many incidents/findings are summarized and the size of prompts/responses
+
+### Practical cost ranges (order-of-magnitude)
+**Small lab / portfolio demo:** low, if you keep log volume tiny and retention short.  
+**Small business / 2–5 accounts:** typically moderate if Security Hub/GuardDuty/Inspector are enabled and logs retained.  
+**Enterprise / many accounts + high logging:** cost grows mainly with log volume, retention, and SIEM/query usage.
+
+> Tip: the “knobs” that most reduce monthly cost are: log retention policies, Security Lake/SIEM query patterns, NAT usage, and scoping Macie/Inspector coverage.
+
+### How to estimate it properly (what you'd do in a real org)
+- Use AWS Pricing Calculator with assumptions:
+  - number of accounts
+  - GB/day of logs (CloudTrail, VPC Flow Logs, app logs)
+  - retention period (days/months)
+  - number of workloads/resources scanned
+  - incident volume for optional AI summaries
+- Track spend by tagging (env/account/team) and set budgets + alerts per account.
+
+---
+## Project status
+✅ Architecture + documentation complete  
+🟨 IaC scaffolding in progress  
+⬜ Full deployment optional (not required for portfolio review)
+
+*You can now use this as your README intro and architecture description. Next, you can create a visual diagram based on the text above, or I can help you generate a diagram in draw.io or another tool if you want a visual template.*

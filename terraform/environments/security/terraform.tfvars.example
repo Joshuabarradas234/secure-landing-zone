@@ -1,0 +1,27 @@
+# Security Account — terraform.tfvars example
+# Copy this file to terraform.tfvars and fill in your values
+
+aws_region = "us-east-1"
+
+project_name = "secure-multi-account-landing-zone"
+
+environment = "production"
+
+owner = "platform-engineering"
+
+# Member account IDs to aggregate findings from
+# Example: dev, staging, and prod accounts
+member_account_ids = [
+  "123456789012",  # dev-account
+  "210987654321",  # staging-account
+  "321098765432",  # prod-account
+]
+
+# CloudWatch Log retention (in days)
+cloudwatch_retention_days = 30
+
+# Enable default Security Hub standards (CIS AWS Foundations)
+enable_default_standards = true
+
+# Enable PCI DSS compliance standard (adds cost, ~$30/month)
+enable_pci_dss = false
