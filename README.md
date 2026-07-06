@@ -1,237 +1,160 @@
-# Secure Multi-Account AWS Landing Zone & DevSecOps Platform
-## Live Deployment
+# JobAdder OAuth 2.0 Integration on AWS
 
-I deployed the security stack to a real AWS account on 6 July 2026 to confirm it actually works, captured the evidence, then tore it down with `terraform destroy`.
+[![CI](https://github.com/Joshuabarradas234/jobadder-oauth-aws/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Joshuabarradas234/jobadder-oauth-aws/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
 
-`terraform apply` stood up 13 resources in about a minute:
+**▶ [Live interactive demo](https://joshuabarradas234.github.io/jobadder-oauth-aws/docs/demo.html)** — watch the full pipeline run end-to-end in your browser (no setup, no backend).
 
-- CloudTrail logging across all regions into an encrypted, versioned S3 bucket
-- GuardDuty running as the threat-detection layer
-- Security Hub with the AWS Foundational Security Best Practices and CIS AWS Foundations benchmarks switched on
-- An SNS + EventBridge pipeline to route findings to alerts
+A serverless AWS integration that connects to the [JobAdder](https://developers.jobadder.com)
+recruitment API using the OAuth 2.0 authorization-code flow, with **automatic
+token refresh** so the access token never lapses. Built entirely with native
+AWS services — no third-party automation platform.
 
-Screenshots and notes are in [docs/evidence/live-deployment/](docs/evidence/live-deployment/).
-
-One thing worth being straight about: I ran this in a single account, so it proves the security services deploy and run — not the full multi-account Organizations setup. A lone test account can't really create an Organization to deploy into itself, so that layer is covered by `terraform validate` rather than a live run. Everything else here was genuinely deployed, checked in the console, and destroyed afterwards so it isn't sitting there costing money.
-
----
-
-## Overview
-
-This is a **complete, tested, production-deployed** multi-account AWS landing zone foundation. It demonstrates enterprise-grade security posture, cost optimisation, and compliance readiness through real infrastructure-as-code (Terraform) + GitHub Actions CI/CD.
-
-**Status:** 8/10 Portfolio Build
-- ✅ Full Terraform modules (Organizations, Security Hub, GuardDuty, CloudTrail, Identity Center)
-- ✅ Real deployment evidence (console screenshots)
-- ✅ GitHub Actions CI/CD pipeline with security scanning
-- ✅ Deployment guide with step-by-step instructions
-- ✅ Cost model validated against production deployment
+> **Background:** this is a sanitised reference version of a production
+> integration I built for a recruitment startup, replacing a Make.com webhook
+> with a native AWS stack. All client identifiers, secrets, endpoints and
+> company-specific details have been removed and replaced with placeholders.
 
 ---
 
-## The Business Problem
+## The problem it solves
 
-NovaBridge Financial — a UK fintech entering FCA (Financial Conduct Authority) regulation — was running all workloads in a single AWS account with ad-hoc IAM policies and no change control. FCA audit requires: environment segregation (dev/staging/prod), complete audit trails, least-privilege access, and continuous compliance monitoring. Without these controls, their regulatory application would fail.
-
-Secondary problem: developers with elevated permissions could inadvertently modify production resources. There was no hard blast-radius boundary.
-
-**Solution:** Multi-account landing zone with SCPs, centralised logging, threat detection, and federated identity.
-
----
-
-## What This Achieves
-
-| Control | How | Verified |
-|---------|-----|----------|
-| **Account isolation** | SCPs at OU level (above IAM) | ✅ Console evidence: SCP denies S3:DeleteBucket, CloudTrail:DeleteTrail |
-| **Centralised logging** | Organization CloudTrail → S3 + CloudWatch Logs | ✅ Console evidence: 3-account trail logging to regional S3 |
-| **Threat detection** | GuardDuty + Security Hub cross-account aggregation | ✅ Console evidence: Security Hub dashboard with 3 linked accounts |
-| **Access control** | IAM Identity Center + permission sets (Admin/Developer/SecurityLead) | ✅ Console evidence: 3 permission sets configured |
-| **Compliance visibility** | Security Hub CIS AWS Foundations benchmark + CloudWatch alarms | ✅ Console evidence: Security Hub standards enabled, findings routed to SNS |
-| **Infrastructure as Code** | Terraform modules — reusable, testable, version-controlled | ✅ Tested: `terraform validate`, `terraform plan` green across all environments |
-
----
-
-## Account Structure
-
-```
-Management Account (AWS Organizations root)
-├── Organizations module: OUs (Security, SharedServices, Workloads)
-├── SCPs: Protect CloudTrail, enforce S3 encryption, lock security services
-└── Cross-account role for Terraform delegation
-
-Security Account (Aggregator)
-├── CloudTrail: Organization-wide logging → S3 + CloudWatch Logs
-├── Security Hub: Aggregates findings from all accounts + CIS standards
-├── GuardDuty: Threat detection with S3 + Kubernetes audit logs
-├── IAM Identity Center: Permission sets + Entra ID federation setup
-├── SNS Topics: Route HIGH/CRITICAL findings to alerts
-└── CloudWatch: Dashboards + alarms for security posture
-
-Workload Accounts (Dev, Staging, Prod)
-└── VPC template: Multi-AZ, NAT Gateway, Flow Logs (scaffolded, not deployed)
-```
-
----
+JobAdder issues OAuth access tokens that **expire after 60 minutes**. A naive
+integration breaks every hour and needs a human to re-authorise. This stack
+handles the full token lifecycle automatically: it completes the one-time OAuth
+handshake, stores the tokens encrypted, and refreshes them on a schedule (and
+on-demand if a call ever returns `401`) so downstream API calls keep working
+indefinitely without manual intervention.
 
 ## Architecture
 
-[![Architecture Diagram](./architecture.jpg)](./architecture.jpg)
-
-**Read the full design reasoning:**
-- [DECISION_RECORD.md](./DECISION_RECORD.md) — Why each service was chosen over alternatives
-- [DEPLOYMENT.md](./DEPLOYMENT.md) — Step-by-step deployment instructions with validation
-
----
-
-## Key Components (Terraform Modules)
-
-| Module | Purpose | Files |
-|--------|---------|-------|
-| `modules/organizations/` | Multi-account structure + SCPs | main.tf, variables.tf, outputs.tf |
-| `modules/security-logging/` | CloudTrail + S3 + lifecycle rules | main.tf, variables.tf, outputs.tf |
-| `modules/security-hub/` | Aggregator + CIS standards + alarms | main.tf, variables.tf, outputs.tf |
-| `modules/guardduty/` | Threat detection + SNS alerts | main.tf, variables.tf, outputs.tf |
-| `modules/iam-identity-center/` | Permission sets (Admin/Dev/SecurityLead) | main.tf, variables.tf, outputs.tf |
-| `modules/networking/` | VPC scaffold for workload accounts | main.tf, variables.tf, outputs.tf |
-
----
-
-## Repository Structure
+Open [`docs/architecture.html`](docs/architecture.html) in a browser for the
+full interactive diagram, or [`docs/demo.html`](docs/demo.html) for an **animated
+walkthrough** that visualises the whole pipeline running end-to-end (SQS → API
+Gateway → Secrets Manager/KMS → Lambda → JobAdder → refresh), with a live event
+log. In summary:
 
 ```
-├── .github/
-│   └── workflows/
-│       ├── validate.yml      # Pre-commit: fmt, validate, tfsec, checkov
-│       └── plan.yml          # PR: Terraform plan for review
-├── terraform/
-│   ├── modules/              # Reusable modules
-│   │   ├── organizations/
-│   │   ├── security-logging/
-│   │   ├── security-hub/
-│   │   ├── guardduty/
-│   │   ├── iam-identity-center/
-│   │   └── networking/
-│   ├── environments/          # Account-specific deployments
-│   │   ├── management/        # Organizations + SCPs
-│   │   ├── security/          # Logging + Security Hub + GuardDuty
-│   │   └── workload-base/     # VPC template
-│   └── scripts/
-│       └── validate.sh        # Local pre-commit checks
-├── docs/
-│   ├── evidence/              # Console screenshots (org structure, CloudTrail, etc.)
-│   ├── decisions/             # Architecture decision records
-│   └── diagrams/              # Visual architecture
-├── DEPLOYMENT.md              # Full deployment guide (4 phases)
-├── DECISION_RECORD.md         # Design rationale + cost model
-└── architecture.jpg           # High-level diagram
+                    ┌──────────────────────────────────────────┐
+   Browser  ──▶ API Gateway ──▶  OAuth Callback Lambda          │
+ (one-time)                       └─ exchanges code for tokens  │
+                                  └─ stores them (KMS-encrypted) │
+                                                                 │
+   EventBridge (rate: 50 min) ──▶ Token Refresh Lambda          │
+                                  └─ refreshes before expiry     │
+                                                                 │
+   SQS queue ──▶ Candidate Fetcher Lambda ──▶ JobAdder API       │
+                 └─ on 401: force-refresh, retry once            │
+                 └─ failures ──▶ Dead-Letter Queue ──▶ SNS alert │
+                    (all secrets in Secrets Manager + KMS)       │
 ```
 
----
+### AWS services used
 
-## Quick Start
+| Service | Role |
+|---|---|
+| **API Gateway (HTTP API)** | Receives the OAuth redirect callback and direct fetch requests |
+| **Lambda** ×3 | OAuth callback, scheduled token refresh, candidate fetcher |
+| **Secrets Manager** | Stores client credentials and the live access/refresh tokens |
+| **KMS** | Customer-managed key encrypting all secrets, with rotation enabled |
+| **EventBridge** | Triggers the token refresh every 50 minutes |
+| **SQS + DLQ** | Queues candidate-fetch jobs; failures route to a dead-letter queue |
+| **SNS** | Emails an alert on refresh failure or DLQ activity |
+| **CloudWatch** | Logs and alarms (token-refresh errors, DLQ depth) |
 
-### 1. Review & Validate (no AWS access needed)
+## The three Lambdas
+
+- **`oauth-callback`** — receives the authorization code from JobAdder after the
+  user consents, exchanges it for access + refresh tokens, and stores them
+  encrypted in Secrets Manager.
+- **`token-refresh`** — invoked by EventBridge every 50 minutes (or directly on a
+  `401`). Uses the refresh token to obtain a new access token before the old one
+  expires. Handles refresh-token rotation.
+- **`candidate-fetcher`** — reads the current token, calls the JobAdder API, and
+  on a `401` force-refreshes the token and retries once. Runs from SQS (with
+  partial-batch-failure reporting) or via direct API Gateway invocation.
+
+## Security posture
+
+- **No secrets in code.** The client secret is supplied at deploy time as a
+  `NoEcho` CloudFormation parameter and stored in Secrets Manager. The repo
+  contains only placeholders (`YOUR_JOBADDER_CLIENT_ID`).
+- **Encryption at rest** via a customer-managed KMS key with rotation enabled.
+- **Least-privilege IAM** — each Lambda has its own role scoped to the specific
+  secret and key it needs.
+- **No token values or PII in logs** — the code logs metadata (expiry, scope)
+  but never the tokens or candidate data themselves.
+
+## Deploy
 
 ```bash
-# Check Terraform syntax
-terraform validate
-
-# Run local security scan (requires tfsec)
-bash terraform/scripts/validate.sh
+export JOBADDER_CLIENT_SECRET="your-secret"     # never hard-coded
+./scripts/deploy.sh
 ```
 
-### 2. Deploy to AWS (Management Account)
+The script packages the Lambdas, deploys the CloudFormation stack, and prints
+the OAuth redirect URI to register in the JobAdder developer portal. Then run
+the one-time authorisation:
 
 ```bash
-cd terraform/environments/management
-terraform init
-terraform plan    # Review SCP + OU creation
-terraform apply   # Create Organizations structure
+node scripts/generate-auth-url.js
 ```
 
-### 3. Deploy to AWS (Security Account)
+Open the printed URL, approve access, and AWS handles every refresh from then on.
+
+## Designed evolution: multi-tenant
+
+The version here is **single-tenant** — one connected JobAdder account, tokens in
+Secrets Manager. [`docs/multi-tenant-design.html`](docs/multi-tenant-design.html)
+documents the **multi-tenant design** I proposed as the next step: one app,
+many customers, one KMS-encrypted token **row per customer in DynamoDB** keyed by
+account id, with per-tenant refresh and isolation — so onboarding a customer adds
+a row, never new infrastructure. That document describes the design; the code in
+this repo implements the single-tenant version it evolves from.
+
+## What this demonstrates
+
+- OAuth 2.0 authorization-code flow implemented end-to-end on AWS
+- Automatic credential lifecycle management (scheduled + reactive refresh)
+- Event-driven, serverless architecture with proper failure handling (DLQ, alarms)
+- Secrets management and encryption done correctly (KMS, least privilege, no secrets in code)
+- Infrastructure as code (single CloudFormation template, repeatable deploy)
+- Tested decision logic (`node:test`) and CI on every push — ESLint, unit tests, and `cfn-lint` validation of the CloudFormation template
+
+## Tests & CI
+
+The token-refresh and API-status decision logic lives in [`lib/token-logic.js`](lib/token-logic.js)
+as pure functions the Lambdas import, so it can be unit-tested without AWS, the
+network, or the clock:
 
 ```bash
-cd terraform/environments/security
-terraform init
-terraform plan    # Review CloudTrail, Security Hub, GuardDuty
-terraform apply   # Enable centralised logging & monitoring
+npm install
+npm test      # node:test unit tests
+npm run lint  # ESLint
 ```
 
-**Full walkthrough:** See [DEPLOYMENT.md](./DEPLOYMENT.md)
+GitHub Actions runs the lint + tests and validates `cloudformation.yaml` with
+`cfn-lint` on every push.
 
----
+## Repo layout
 
-## Evidence (Real Deployment)
-   
-   This landing zone was **deployed to production and tested with real AWS accounts**...
-
-| Screenshot | Proves |
-|------------|--------|
-| `evidence-01-org-accounts.png` | 3-account structure with OUs |
-| `evidence-02-cloudtrail.png` | Organization-wide CloudTrail logging to S3 |
-| `evidence-03-securityhub.png` | Security Hub aggregator with member accounts linked |
-| `evidence-04-guardduty.png` | GuardDuty detector active across accounts |
-| `evidence-05-iam-identity-center.png` | Identity Center with permission sets |
-| `evidence-06-bedrock.png` | Bedrock model access (optional AI layer) |
-| `evidence-07-actions.png` | GitHub Actions workflow runs |
-| `evidence-08-terraform.png` | Terraform plan/apply output |
-
-**All sensitive identifiers (account IDs, ARNs, emails) are redacted.**
-
-See [docs/evidence/README.md](./docs/evidence/README.md) for detailed breakdown.
-
----
-
-## Cost Model (Validated)
-
-| Service | 3-Account Cost | Notes |
-|---------|---|---|
-| CloudTrail | $2–$5/mo | Organization trail (flat) |
-| S3 (logs) | $0.50–$5/mo | Depends on API volume |
-| GuardDuty | $30–$50/mo | ~$0.3–$1.5 per million events |
-| Security Hub | $30/mo | Aggregator account |
-| SNS | <$1/mo | Minimal alert traffic |
-| CloudWatch Logs | $5–$15/mo | 30-day retention |
-| Identity Center | Free | Up to 100 users |
-| **Total** | **$70–$100/mo** | For 3-account production org |
-
-**Scales to 10 accounts:** ~$150–$250/month (1 additional Cloud Trail logging account + more GuardDuty volume)
-
-See [DECISION_RECORD.md](./DECISION_RECORD.md) for full cost breakdown.
-
----
-
-## What's Next
-
-After deployment:
-
-1. **Enable Entra ID federation** (manual setup, documented in Identity Center module)
-2. **Invite team members** and assign permission sets
-3. **Subscribe SNS topics** to Slack/PagerDuty for alerts
-4. **Deploy workload VPCs** using the `workload-base` module
-5. **Configure compliance** — schedule weekly Security Hub reviews
-6. **Scale to 10+ accounts** — add to `member_account_ids` in Terraform
-
----
-
-## Design Philosophy
-
-This implementation is **honest and tested:**
-- Real Terraform code that deploys actual infrastructure
-- All service selections backed by documented trade-off analysis
-- Cost model validated against production deployment
-- Evidence provided for all claims
-- Clear separation between "deployed" and "reference" patterns
-- Documentation for manual steps (Entra ID) that Terraform cannot handle
-
-**Not in scope (deferred to post-MVP):**
-- AWS Control Tower automation (requires API features)
-- Bedrock AI automation for finding summarisation (optional layer)
-- Multi-region failover (reference only)
-- Custom compliance rules beyond CIS AWS Foundations
-
-## Contact
-
-**Joshua Barradas** | [LinkedIn](https://www.linkedin.com/in/joshua-barradas-433292212/) | Leeds, UK
+```
+lambda/
+  oauth-callback/      # code → tokens, stored encrypted
+  token-refresh/       # scheduled + on-401 refresh
+  candidate-fetcher/   # calls JobAdder API, 401→refresh→retry
+lib/
+  token-logic.js       # pure, unit-tested decision logic (shared by the Lambdas)
+test/
+  token-logic.test.js  # node:test unit tests
+scripts/
+  deploy.sh            # package + deploy + print redirect URI
+  generate-auth-url.js # one-time OAuth kickoff
+cloudformation.yaml    # the whole stack as IaC
+.github/workflows/
+  ci.yml               # ESLint + unit tests + cfn-lint on every push
+docs/
+  architecture.html         # interactive architecture diagram
+  demo.html                 # animated end-to-end pipeline walkthrough
+  multi-tenant-design.html  # proposed multi-tenant evolution
+```
