@@ -1,46 +1,28 @@
 # Secure Multi-Account AWS Landing Zone & DevSecOps Platform
 
-## Live Deployment
+A multi-account AWS landing zone built as reusable Terraform, with a GitHub Actions CI pipeline. It codifies the security baseline a regulated fintech needs: account segregation via AWS Organizations and Service Control Policies, centralised audit logging with CloudTrail, managed threat detection with GuardDuty and Security Hub, and least-privilege access through IAM Identity Center.
 
-I deployed the security stack to a real AWS account on 6 July 2026 to confirm it actually works, captured the evidence, then tore it down with `terraform destroy`.
+The design is delivered as six composable Terraform modules with separate environment configurations for the management, security, and workload accounts, plus supporting documentation covering cost, compliance mapping, disaster recovery, multi-region strategy, and performance.
 
-`terraform apply` stood up 13 resources in about a minute:
+## Live deployment
+
+The security stack was deployed to a real AWS account on 6 July 2026, verified in the console, and torn down with `terraform destroy`. A single `terraform apply` provisioned 13 resources in about a minute:
 
 - CloudTrail logging across all regions into an encrypted, versioned S3 bucket
-- GuardDuty running as the threat-detection layer
-- Security Hub with the AWS Foundational Security Best Practices and CIS AWS Foundations benchmarks switched on
-- An SNS + EventBridge pipeline to route findings to alerts
+- GuardDuty as the managed threat-detection layer
+- Security Hub with the AWS Foundational Security Best Practices and CIS AWS Foundations benchmarks enabled
+- An SNS + EventBridge pipeline routing findings to alerts
 
-Screenshots and notes are in [docs/evidence/live-deployment/](docs/evidence/live-deployment/).
+Console screenshots and deployment notes are in [docs/evidence/live-deployment/](docs/evidence/live-deployment/).
 
-One thing worth being straight about: I ran this in a single account, so it proves the security services deploy and run — not the full multi-account Organizations setup. A lone test account can't really create an Organization to deploy into itself, so that layer is covered by `terraform validate` rather than a live run. Everything else here was genuinely deployed, checked in the console, and destroyed afterwards so it isn't sitting there costing money.
+This live run covered the security services in a single account. The multi-account Organizations and SCP layer is written as Terraform and verified with `terraform validate` — deploying it live requires an existing AWS Organization, which is documented in [DEPLOYMENT.md](./DEPLOYMENT.md). Entra ID federation is configured through the AWS console (external identity provider) and documented in the Identity Center module rather than managed in Terraform.
 
----
+## Highlights
 
-## Overview
-
-A multi-account AWS landing zone foundation built as reusable Terraform, with a GitHub Actions CI pipeline. It codifies the security baseline a regulated fintech would need: account segregation, centralised audit logging, threat detection, and least-privilege access.
-
-**Status: honest 8/10 portfolio build**
-
-- ✅ Six Terraform modules (Organizations, Security Hub, GuardDuty, CloudTrail/logging, Identity Center, networking) — real resources, not stubs
-- ✅ Security stack deployed to live AWS and verified, then destroyed (see above)
-- ✅ GitHub Actions CI (`terraform fmt`, `validate`, `plan`)
-- ✅ Deployment guide, cost model, compliance mapping, DR runbook, and multi-region plan
-- ⚠️ Multi-account Organizations layer is `terraform validate`-verified but not deployed live (needs a real AWS Organization)
-- ⚠️ Entra ID federation is documented, not Terraformed (external identity provider)
-
----
-
-## The Business Problem
-
-NovaBridge Financial — a UK fintech entering FCA (Financial Conduct Authority) regulation — was running all workloads in a single AWS account with ad-hoc IAM policies and no change control. FCA audit requires environment segregation (dev/staging/prod), complete audit trails, least-privilege access, and continuous compliance monitoring. Without these controls, their regulatory application would fail.
-
-Secondary problem: developers with elevated permissions could inadvertently modify production resources. There was no hard blast-radius boundary.
-
-**Solution:** a multi-account landing zone with SCPs, centralised logging, threat detection, and federated identity — all as version-controlled Terraform.
-
-(NovaBridge is a fictional scenario used to frame the design. It is not a real client.)
+- Six Terraform modules (Organizations, Security Hub, GuardDuty, CloudTrail/logging, Identity Center, networking) — real resources across roughly 1,000 lines of HCL
+- Security stack deployed to live AWS and verified, then destroyed
+- GitHub Actions CI running `terraform fmt`, `validate`, and Checkov on every change
+- Deployment guide, cost model, FCA compliance mapping, DR runbook, and multi-region strategy
 
 ---
 
@@ -52,7 +34,7 @@ Secondary problem: developers with elevated permissions could inadvertently modi
 | **Centralised logging** | CloudTrail → encrypted S3 + CloudWatch Logs | Deployed live and verified (single account) |
 | **Threat detection** | GuardDuty + Security Hub | Deployed live and verified (single account) |
 | **Access control** | IAM Identity Center permission sets (Admin/Developer/SecurityLead) | Terraform in `modules/iam-identity-center` — validated, not deployed live |
-| **Compliance visibility** | Security Hub AWS Foundational + CIS benchmarks + CloudWatch alarms | Standards deployed live and verified |
+| **Compliance visibility** | Security Hub AWS Foundational + CIS benchmarks; CloudWatch alarms defined in module | Standards deployed live and verified |
 | **Infrastructure as Code** | Terraform modules — reusable, testable, version-controlled | `terraform validate` + `plan` green across all environments |
 
 ---
@@ -85,7 +67,7 @@ Secondary problem: developers with elevated permissions could inadvertently modi
 ```
 ├── .github/
 │   └── workflows/
-│       ├── validate.yml      # fmt, validate, tfsec, checkov
+│       ├── validate.yml      # fmt, validate, checkov
 │       └── plan.yml          # Terraform plan on PRs
 ├── terraform/
 │   ├── modules/              # Reusable modules
@@ -155,7 +137,7 @@ terraform apply   # Enable centralised logging & monitoring
 
 Two kinds of evidence live in this repo:
 
-**1. Live deployment of this repo's Terraform** — [docs/evidence/live-deployment/](docs/evidence/live-deployment/). This is the one that matters: I deployed the security stack from this code to a real account, captured console screenshots (CloudTrail, GuardDuty, Security Hub, S3), and destroyed it afterwards. See the [Live Deployment](#live-deployment) section above.
+**1. Live deployment of this repo's Terraform** — [docs/evidence/live-deployment/](docs/evidence/live-deployment/). This is the one that matters: the security stack in this repo was deployed to a real account, captured as console screenshots (CloudTrail, GuardDuty, Security Hub, S3), and destroyed afterwards. See the [Live deployment](#live-deployment) section above.
 
 **2. Earlier console exploration** — [docs/evidence/](docs/evidence/) contains screenshots from earlier hands-on work with these AWS services (Organizations, CloudTrail, Security Hub, GuardDuty, Identity Center). They show the services this landing zone codifies, but are not proof of this repo's own deployment.
 
@@ -171,30 +153,30 @@ Two kinds of evidence live in this repo:
 
 ---
 
-## What's Next
+## Roadmap
 
 1. Deploy the full multi-account layer in a real AWS Organization (Organizations + SCPs live, not just validated)
-2. Enable Entra ID federation (manual setup, documented in the Identity Center module)
+2. Enable Entra ID federation (console setup, documented in the Identity Center module)
 3. Subscribe SNS topics to Slack/PagerDuty for alerts
 4. Deploy workload VPCs using the `workload-base` module
 5. Scale to 10+ accounts via `member_account_ids`
 
 ---
 
-## Honest Scope
+## Scope
 
 **Deployed live and verified:** CloudTrail, S3 logging, GuardDuty, Security Hub standards, SNS/EventBridge alerting (single account).
 
-**Written and `terraform validate`-verified, not deployed live:** Organizations + SCPs, IAM Identity Center permission sets, workload networking.
+**Written and `terraform validate`-verified, not deployed live:** Organizations and SCPs, IAM Identity Center permission sets, workload networking.
 
-**Deliberately out of scope:**
+**Out of scope by design:**
 - AWS Control Tower automation (requires account-factory features)
 - Bedrock AI automation for finding summarisation
 - Multi-region failover (planned in [docs/MULTI_REGION.md](docs/MULTI_REGION.md), not built)
-- Entra ID SAML federation (documented, not Terraformed — external IdP)
+- Entra ID SAML federation (documented, external identity provider — not managed in Terraform)
 
 ---
 
-## Contact
+## Author
 
-Built by Joshua Barradas as a portfolio project. Feedback welcome via GitHub issues.
+Built by Joshua Barradas. Feedback and questions welcome via GitHub issues.
