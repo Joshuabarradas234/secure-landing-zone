@@ -38,21 +38,6 @@ jobs:
           cd ../workload-base && terraform validate
         continue-on-error: false
 
-      - name: Setup TFSec
-        uses: aquasecurity/setup-tfsec@v1
-        with:
-          tfsec_version: latest
-
-      - name: Run TFSec Security Scan
-        run: tfsec terraform/ --minimum-severity high --format sarif --out tfsec-results.sarif
-        continue-on-error: true
-
-      - name: Upload TFSec results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v2
-        with:
-          sarif_file: tfsec-results.sarif
-        if: always()
-
       - name: Setup Checkov
         run: pip install checkov
         continue-on-error: true
