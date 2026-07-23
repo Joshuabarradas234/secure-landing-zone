@@ -1,186 +1,172 @@
-# Compliance Mapping: FCA Requirements & Implementation
+# Compliance Mapping: FCA Control Areas → Landing-Zone Design
 
-## Executive Summary
+## What this document is
 
-This landing zone directly addresses **8 core FCA technical requirements** for fintech companies entering regulation. Each requirement maps to a specific Terraform resource with evidence of implementation.
+This is a **design reference**, not a compliance attestation. It maps the control areas an FCA-regulated fintech has to think about onto the specific Terraform resources in this landing zone, and shows how the design would satisfy each one.
+
+It is written as a learning and design exercise. It is **not** evidence of a certified or audited environment, and it should not be read as a claim that this repository is FCA-compliant. Where a control is deployed and evidenced versus only written as code, that distinction is called out explicitly — see the status column in each section and the summary table at the end.
+
+**Deployment status (important context for everything below):** only the single-account security stack from this landing zone has been deployed live and evidenced — CloudTrail, GuardDuty, Security Hub, the logging S3 bucket, and IAM Identity Center (see `docs/evidence/live-deployment/`). The multi-account Organizations layer — the OUs and SCPs that several controls below depend on — is written and validated as Terraform but was **not** deployed (a single test account cannot form an Organization). Controls that rely on the Organizations layer are therefore **design, not deployed**, and are marked as such.
 
 ---
 
-## FCA Technical Requirements & AWS Implementation
+## FCA Control Areas & How the Design Maps
 
 ### 1. Segregated Environments (Dev/Staging/Production)
 
-**FCA Requirement:** Separate infrastructure for development, testing, and production to prevent code changes affecting live customers.
+**Control area:** Separate infrastructure for development, testing, and production so code changes cannot affect live customers.
 
-| Component | Implementation | Resource | Evidence |
+| Component | Design | Resource | Status |
 |-----------|---|---|---|
-| **Environment Isolation** | AWS Organizations OUs | `modules/organizations/main.tf` lines 15-30 | 3 OUs created: Security, SharedServices, Workloads |
-| **Hard Account Boundaries** | Separate AWS accounts per OU | `modules/organizations/outputs.tf` | `security_ou_id`, `workloads_ou_id` outputs |
-| **Policy Enforcement** | SCPs applied at OU level | `modules/organizations/main.tf` lines 33-70 | SCPs deny cross-account resource deletion |
+| Environment isolation | AWS Organizations OUs (Security, SharedServices, Workloads) | `modules/organizations/main.tf` | **Coded, not deployed** |
+| Hard account boundaries | Separate AWS accounts per OU | `modules/organizations/outputs.tf` | **Coded, not deployed** |
+| Policy enforcement | SCPs applied at OU level | `modules/organizations/main.tf` | **Coded, not deployed** |
 
-**Proof:** Any developer in dev account cannot access staging/prod via IAM (OUs prevent it) or SCPs (policies block it even if account access existed).
+*How it would work:* a developer in a dev account could not reach staging/prod, because the OU structure and SCPs would block it even if account access existed. This depends on the Organizations layer, which is written but not stood up — so this is a design, validated by `terraform plan`, not a running control.
 
 ---
 
 ### 2. Immutable Audit Trail (Non-Repudiation)
 
-**FCA Requirement:** All user actions and API calls must be logged, immutable, and tamper-evident.
+**Control area:** User actions and API calls logged, immutable, and tamper-evident.
 
-| Component | Implementation | Resource | Evidence |
+| Component | Design | Resource | Status |
 |-----------|---|---|---|
-| **CloudTrail Logging** | Organization-wide trail | `modules/security-logging/main.tf` lines 105-123 | `aws_cloudtrail.organization` resource, `is_organization_trail = true` |
-| **Immutable Storage** | S3 with versioning + bucket policy | `modules/security-logging/main.tf` lines 11-30 | Versioning enabled, MFA delete capable |
-| **Log Delivery** | CloudTrail → S3 + CloudWatch | `modules/security-logging/main.tf` lines 88-103 | `log_file_validation = true` for integrity |
-| **Access Control** | Bucket policy restricts access | `modules/security-logging/main.tf` lines 33-70 | Only CloudTrail service can write logs |
+| CloudTrail logging | Trail feeding a central bucket | `modules/security-logging/main.tf` | **Deployed & evidenced** (single account) |
+| Immutable storage | S3 versioning + restrictive bucket policy | `modules/security-logging/main.tf` | **Deployed & evidenced** |
+| Log integrity | `log_file_validation = true` | `modules/security-logging/main.tf` | **Deployed & evidenced** |
+| Access control | Bucket policy restricts writes to the CloudTrail service | `modules/security-logging/main.tf` | **Deployed & evidenced** |
 
-**Proof:** Even an account admin cannot delete logs (S3 bucket policy prevents it). Logs are versioned (can restore if deleted). CloudTrail validates log integrity (tamper detection).
+*Note:* in the deployed single-account form, this is a standard (not organization-wide) trail. `is_organization_trail = true` is set in code but only takes effect once the Organizations layer is deployed.
 
 ---
 
-### 3. Complete API Audit Trail (No Blind Spots)
+### 3. Complete API Audit Trail
 
-**FCA Requirement:** Every API call from every account must be logged.
+**Control area:** Every API call from every account logged.
 
-| Requirement | Implementation | Resource |
+| Requirement | Design | Resource | Status |
+|---|---|---|---|
+| All accounts logged | Organization CloudTrail (`is_organization_trail = true`) | security-logging | **Coded, not deployed** (needs Organizations) |
+| All regions logged | Multi-region trail (`is_multi_region_trail = true`) | security-logging | **Deployed** (single account) |
+| All event types | Management + data events | security-logging | **Deployed** |
+| Global services | `include_global_service_events = true` | security-logging | **Deployed** |
+
+*The "every account" part is design* — it activates when the org trail is deployed. Multi-region and event coverage are live in the deployed account.
+
+---
+
+### 4. Least-Privilege Access Control
+
+**Control area:** No standing admin access; access time-limited and audited.
+
+| Control | Design | Resource | Status |
+|---|---|---|---|
+| Permission sets | Admin, Developer, SecurityLead roles | `modules/iam-identity-center/main.tf` | **Deployed & evidenced** |
+| Developer restrictions | Explicit Deny on `iam:*`, `guardduty:*`, `securityhub:*` | `modules/iam-identity-center/main.tf` | **Deployed** |
+| Session limits | 4–8h session duration | `modules/iam-identity-center/main.tf` | **Deployed** |
+| Admins only in non-prod | Documented process | DEPLOYMENT.md | **Documented, manual** |
+
+*How it works:* even with console access, a developer's permission set denies modification of security services, and sessions are time-bound.
+
+---
+
+### 5. Continuous Threat Monitoring
+
+**Control area:** Automated detection of anomalous behaviour with alerting, no manual log review.
+
+| Component | Design | Resource | Status |
+|---|---|---|---|
+| GuardDuty detector | ML-based threat detection on CloudTrail + VPC flow logs | `modules/guardduty/main.tf` | **Deployed & evidenced** |
+| Security Hub aggregator | Central findings view | `modules/security-hub/main.tf` | **Deployed & evidenced** |
+| Automated alerting | HIGH/CRITICAL → EventBridge → SNS | `modules/security-hub/main.tf` | **Deployed** |
+| CloudWatch alarms | Alarm on critical-finding count | `modules/security-hub/main.tf` | **Deployed** |
+
+*In the deployed single account this runs for that account; cross-account aggregation depends on the Organizations layer.*
+
+---
+
+### 6. Compliance Standards Validation
+
+**Control area:** Demonstrable adherence to a recognised framework (CIS, PCI-DSS, etc.).
+
+| Standard | Design | Resource | Status |
+|---|---|---|---|
+| CIS AWS Foundations | Enabled in Security Hub | `modules/security-hub/main.tf` | **Deployed** |
+| PCI DSS | Configurable (optional) | `modules/security-hub/main.tf` | **Coded, optional** |
+| Automated assessment | Security Hub runs checks | AWS managed | **Deployed** |
+
+*The CIS standard was enabled on the deployed account; Security Hub reports a compliance score against it.*
+
+---
+
+### 7. Segregation of Duties
+
+**Control area:** Security team cannot modify applications; developers cannot disable security controls.
+
+| Boundary | Design | Resource | Status |
+|---|---|---|---|
+| Developer cannot touch security services | Permission-set Deny on GuardDuty/Security Hub/Config | `modules/iam-identity-center/main.tf` | **Deployed** |
+| Security team limited to read-only + security tools | Separate SecurityLead permission set | `modules/iam-identity-center/main.tf` | **Deployed** |
+| No single person approves + deploys | Manual PR approval before apply | `.github/workflows/plan.yml` | **In the pipeline** |
+
+---
+
+### 8. Change Control & Audit Trail
+
+**Control area:** Every infrastructure change reviewed, approved, and logged.
+
+| Layer | Design | Status |
 |---|---|---|
-| **All accounts logged** | Organization CloudTrail | `is_organization_trail = true` |
-| **All regions logged** | Multi-region trail | `is_multi_region_trail = true` |
-| **All event types** | Management + data events | `event_selector` with `read_write_type = "All"` |
-| **Global services** | Include global events | `include_global_service_events = true` |
-
-**Proof:** CloudTrail settings configured at org root. All 3+ accounts feed logs to single S3 bucket. No account can disable CloudTrail (SCP blocks it).
+| Infrastructure code | Git commit history | **In use** |
+| Code review | GitHub PR approval | **In the pipeline** |
+| Deployment | GitHub Actions logs each apply with user + timestamp | **In use** |
+| Resource changes | CloudTrail captures API calls | **Deployed** (single account) |
 
 ---
 
-### 4. Least-Privilege Access Control (No Elevated Standing Access)
+## Deployed vs Design — Summary
 
-**FCA Requirement:** Developers cannot access production. No standing admin access. All access time-limited and audited.
-
-| Control | Implementation | Resource | Evidence |
-|---|---|---|---|
-| **Permission Sets** | 3 roles: Admin, Developer, SecurityLead | `modules/iam-identity-center/main.tf` lines 15-110 | Separate permission sets with different IAM policies |
-| **Developer Restrictions** | Developers cannot touch IAM, security services | `modules/iam-identity-center/main.tf` lines 59-80 | Explicit Deny on `iam:*`, `guardduty:*`, `securityhub:*` |
-| **Admin Restrictions** | Admins only in non-prod | Manual (documented) | See DEPLOYMENT.md Phase 4 |
-| **No Permanent Access** | Session duration 4-8 hours | `modules/iam-identity-center/main.tf` lines 17, 29, 42 | `session_duration = "PT4H"` for developers, "PT8H" for others |
-
-**Proof:** Even if developer has AWS console access, IAM policy denies modification of security services. Admin access is time-bound (4-8 hour sessions).
-
----
-
-### 5. Continuous Threat Monitoring (24/7 Detection, No Manual Review Burden)
-
-**FCA Requirement:** Automated detection of anomalous behavior. No manual log review. Findings must trigger alerts.
-
-| Component | Implementation | Resource | Evidence |
-|---|---|---|---|
-| **GuardDuty Detector** | ML-based threat detection | `modules/guardduty/main.tf` lines 1-30 | Analyzes CloudTrail + VPC Flow Logs |
-| **Security Hub Aggregator** | Central findings dashboard | `modules/security-hub/main.tf` lines 1-40 | Pulls findings from all accounts, all regions |
-| **Automated Alerting** | HIGH/CRITICAL findings → SNS | `modules/security-hub/main.tf` lines 42-70 | EventBridge rule routes to SNS topic |
-| **CloudWatch Alarms** | Alert on critical finding count | `modules/security-hub/main.tf` lines 95-115 | Alarm triggers if CriticalFindingsCount >= 1 |
-
-**Proof:** No human intervention required. GuardDuty detects lateral movement, data exfiltration, API anomalies automatically. Findings appear in Security Hub within 1 minute. SNS notifies ops team instantly.
-
----
-
-### 6. Compliance Standards Validation (CIS Controls Enforced)
-
-**FCA Requirement:** Demonstrate adherence to recognized security frameworks (CIS, PCI-DSS, etc.).
-
-| Standard | Implementation | Resource |
+| # | Control area | Deployed & evidenced? |
 |---|---|---|
-| **CIS AWS Foundations** | Enabled by default | `modules/security-hub/main.tf` line 8 |
-| **PCI DSS** | Configurable (optional) | `modules/security-hub/main.tf` line 14 |
-| **Automated Assessment** | Security Hub runs checks daily | AWS managed service |
-
-**Proof:** Security Hub dashboard shows compliance score for each standard. Each failed check maps to a CIS control. Example: "S3 bucket encryption not enabled" → CIS 2.1.5 → automatically detected and reported.
+| 1 | Segregated environments (OUs/SCPs) | ❌ Coded, not deployed (needs Organizations) |
+| 2 | Immutable audit trail | ✅ Yes (single-account form) |
+| 3 | Org-wide API trail | ⚠️ Partial — multi-region live; org-wide is coded |
+| 4 | Least-privilege access | ✅ Yes |
+| 5 | Threat monitoring | ✅ Yes (single account) |
+| 6 | CIS standards validation | ✅ Yes |
+| 7 | Segregation of duties | ✅ Yes (permission sets); ⚠️ cross-account needs Organizations |
+| 8 | Change control | ✅ Yes |
 
 ---
 
-### 7. Segregated Security Operations (No Mixing of Duties)
+## CIS AWS Foundations — Control Coverage (design)
 
-**FCA Requirement:** Security team cannot modify applications. Developers cannot disable security controls.
-
-| Boundary | Implementation | Resource | Enforcement |
+| CIS Control | AWS Service | Module | Status |
 |---|---|---|---|
-| **Developer cannot touch security services** | Permission Set policy | `modules/iam-identity-center/main.tf` | Explicit Deny on GuardDuty, Security Hub, Config |
-| **Security team cannot modify app infrastructure** | Separate permission set | `modules/iam-identity-center/main.tf` line 90 | SecurityLead role limited to read-only + security tools |
-| **No single person can approve + deploy** | (Implemented via GitHub) | `.github/workflows/plan.yml` | Manual approval required after plan, before apply |
-
-**Proof:** Even if single person has both roles, permission sets are separate (they'd need to switch roles, which is audited).
-
----
-
-### 8. Change Control & Audit Trail (Every Change Tracked)
-
-**FCA Requirement:** Every infrastructure change is reviewed, approved, and logged.
-
-| Layer | Audit Trail | Evidence |
-|---|---|---|
-| **Infrastructure Code** | Git commit history | `git log` shows who changed what, when, why |
-| **Code Review** | GitHub PR approval | `.github/workflows/plan.yml` requires review |
-| **Deployment** | GitHub Actions logs | Each `terraform apply` logged with user + timestamp |
-| **Resource Changes** | CloudTrail captures all | `modules/security-logging/main.tf` logs API calls |
-
-**Proof:** No infrastructure change happens without: 1) Git commit, 2) PR review, 3) GitHub Actions approval, 4) CloudTrail logging. Full audit chain from code to live.
+| 1.1 – MFA enabled | IAM Identity Center | iam-identity-center | Configured (manual Entra ID setup) |
+| 2.1 – CloudTrail enabled | CloudTrail | security-logging | Deployed (all regions, single account) |
+| 2.2 – CloudTrail logs immutable | S3 | security-logging | Deployed (versioning, bucket policy) |
+| 2.3 – CloudTrail log integrity | CloudTrail | security-logging | Deployed (log file validation) |
+| 4.1 – SSO enabled | Identity Center | iam-identity-center | Deployed |
+| 4.2 – MFA on console | Identity Center | iam-identity-center | Configured (Entra ID) |
+| 4.4 – Unused credentials removed | Manual process | — | Documented, not automated |
+| 5.1 – CloudTrail logs monitored | CloudWatch Logs | security-logging | Deployed (metric filters) |
+| 5.2 – Config enabled | — | — | Not in scope (adds cost) — reference only |
+| 6.1 – GuardDuty enabled | GuardDuty | guardduty | Deployed |
 
 ---
 
-## FCA Audit Checklist
+## Honest Gaps
 
-Print this and take it into FCA audit meetings:
-
-- [ ] **Environments segregated?** Yes — 3 OUs, hard boundaries via SCPs
-- [ ] **Audit trail immutable?** Yes — S3 versioning + bucket policy
-- [ ] **All API calls logged?** Yes — Organization CloudTrail, all regions
-- [ ] **Least privilege enforced?** Yes — Permission sets, session duration limits
-- [ ] **Threats detected automatically?** Yes — GuardDuty + Security Hub
-- [ ] **Compliance standards met?** Yes — CIS Foundations enabled
-- [ ] **No single person can disable controls?** Yes — SCPs apply to account admins
-- [ ] **All changes tracked?** Yes — Git + CloudTrail + GitHub Actions
+- **Multi-account deployment** — the OUs/SCPs are written and plan-validated but not stood up; a single test account cannot form an Organization. Several controls above are therefore design, not running.
+- **Data residency** — UK-only data residency is not enforced in this build.
+- **Encryption in transit** — TLS is used but not explicitly documented per-service.
+- **Backup / disaster recovery** — see `DEPLOYMENT.md` and `runbooks/DR.md`; DR timings are targets, not tested.
+- **Third-party / vendor risk** — no vendor-integration controls in scope.
 
 ---
 
-## Compliance Controls per CIS AWS Foundations
+## How to read this as a portfolio piece
 
-| CIS Control | AWS Service | Terraform Module | Status |
-|---|---|---|---|
-| 1.1 – MFA enabled | IAM Identity Center | iam-identity-center | ✅ Enabled (manual Entra ID setup) |
-| 2.1 – CloudTrail enabled | CloudTrail | security-logging | ✅ Org-wide, all regions |
-| 2.2 – CloudTrail logs immutable | S3 | security-logging | ✅ Versioning, bucket policy |
-| 2.3 – CloudTrail log integrity | CloudTrail | security-logging | ✅ Log file validation enabled |
-| 4.1 – SSO enabled | Identity Center | iam-identity-center | ✅ Configured |
-| 4.2 – MFA on console | Identity Center | iam-identity-center | ✅ (Setup via Entra ID) |
-| 4.4 – Unused credentials removed | Manual process | — | ⚠️ Documented, not automated |
-| 5.1 – CloudTrail logs monitored | CloudWatch Logs | security-logging | ✅ LogGroup + metric filters |
-| 5.2 – Config enabled | Not in scope | — | ⚠️ Reference only (adds cost) |
-| 6.1 – GuardDuty enabled | GuardDuty | guardduty | ✅ All regions |
-
----
-
-## What This Proves to FCA Examiners
-
-1. **Technical Rigor:** You've implemented >8 distinct controls, each with audit trail
-2. **Automation:** No manual controls; everything is code and policy
-3. **Segregation:** Hard boundaries (SCPs) prevent human error
-4. **Visibility:** Every action logged, every finding visible
-5. **Compliance:** Named standards (CIS) actively validated
-6. **Auditability:** Full chain of custody from code → infrastructure → logs
-
----
-
-## What This Does NOT Prove (Gaps)
-
-- ❌ **Data residency controls** — UK-only data not enforced (AWS default: us-east-1)
-- ❌ **Encryption in transit** — TLS enforced but not explicitly documented
-- ❌ **Backup/disaster recovery** — See DEPLOYMENT.md and runbooks/DR.md
-- ❌ **Third-party risk management** — No vendor integration controls
-
----
-
-## Summary for FCA Application
-
-**You can tell the FCA:**
-
-> "We have implemented a multi-account AWS landing zone with segregated environments (dev/staging/prod), immutable audit trails (CloudTrail → S3), automated threat detection (GuardDuty + Security Hub), least-privilege access (Identity Center with time-bound sessions), and full change control (Terraform + GitHub). Every infrastructure change is logged in CloudTrail, every developer action is audited, and security controls cannot be disabled by account admins (SCPs prevent it). We meet CIS AWS Foundations Benchmark and can provide full audit trail of all changes."
-
-This is what FCA examiners want to hear.
+This landing zone is a **design and single-account deployment** demonstrating the AWS building blocks an FCA-regulated fintech would use: multi-account structure with SCP guardrails, organisation-wide logging, automated threat detection, least-privilege SSO, and code-based change control. The security stack was deployed live and evidenced; the multi-account layer is written and validated as Terraform. It shows the reasoning and the implementation approach — it is not, and does not claim to be, a certified or audited compliance environment.
