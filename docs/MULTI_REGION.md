@@ -1,12 +1,12 @@
 # Multi-Region Strategy & Architecture
 
-## Current State (Single Region - Production Ready)
+## Current State (Single Region)
 
-**Deployed in:** `us-east-1` (N. Virginia, USA)
+**Deployed in:** `us-east-1` (N. Virginia) — the single-account security stack.
 
-**Resilience:** None — if us-east-1 fails, entire organization goes offline
+**Resilience:** single-region; if us-east-1 failed, the deployed stack would be offline. The design below is the plan for adding regional resilience; it is not yet built.
 
-**Compliance:** ✅ Meets FCA requirements (single region acceptable for startup/MVP)
+**Note:** single-region is a common starting posture; multi-region resilience would be added as the design below describes.
 
 **Cost:** $70/month (baseline)
 
@@ -304,31 +304,27 @@ Incident in us-east-1?
 
 ## When to Implement Each Phase
 
-### Do Phase 1 (Passive Standby) When:
-- ✅ Running in production (month 3+)
-- ✅ Have >5 customers
-- ✅ Can afford +$35/month
-- ✅ FCA requires high availability (check with them)
-- **Estimated effort:** 8 hours (4 to spec, 4 to implement)
+### Phase 1 (Passive Standby) is warranted when:
+- The workload is in production with real users
+- Availability requirements justify the added ~$35/month
+- A regulator or customer SLA calls for regional resilience
+- **Estimated effort:** ~8 hours (4 to spec, 4 to implement)
 
-### Do Phase 2 (Active-Active) When:
-- ✅ SLA requires <30 minute RTO
-- ✅ Running 10+ accounts
-- ✅ Multiple regions have users
-- ⚠️ Complexity increases significantly
-- **Estimated effort:** 20+ hours
+### Phase 2 (Active-Active) is warranted when:
+- An SLA requires <30-minute RTO
+- The organization runs 10+ accounts
+- Users are spread across multiple regions
+- **Estimated effort:** 20+ hours; complexity rises significantly
 
 ---
 
 ## Implementation Priority
 
-**Right now:** ✅ Don't implement multi-region (single region is fine)
+**Now:** single-region is a reasonable posture for an MVP with no availability SLA.
 
-**Month 3 (after SAA cert + 2-3 months production):** ✅ Implement Phase 1
+**When in production with real users:** implement Phase 1 (passive standby).
 
-**Month 6+ (if needed):** Consider Phase 2
-
-**Decision point:** Ask your first FCA auditor "Do you require multi-region resilience?" Most won't. If they do, Phase 1 is enough to pass.
+**When an SLA requires sub-30-minute recovery:** consider Phase 2 (active-active).
 
 ---
 
@@ -352,27 +348,11 @@ Incident in us-east-1?
 
 ---
 
-## Current Recommendation
+## Summary
 
-**For your portfolio and job interviews:**
+The landing zone is currently single-region (`us-east-1`). This document sets out a two-phase plan for regional resilience:
 
-Stay single-region for now. Your landing zone is already strong. Multi-region is:
-- ✅ Nice to mention ("I have a plan for multi-region")
-- ❌ Not necessary to prove SA skills
-- ❌ Not worth 8+ more hours when you should be studying for SAA
+- **Phase 1 — passive standby** (~$105/mo, ~2-hour manual failover): replicate CloudTrail logs to us-west-2 and run standby GuardDuty and Security Hub detectors there. The lower-effort, lower-cost step, and enough for most availability requirements.
+- **Phase 2 — active-active** (~$140/mo, <30-min automatic failover): both regions active with a global finding aggregator. Higher complexity, justified only when an SLA genuinely requires sub-30-minute recovery.
 
-**When to add it:** After you get the job and are in production. It's an operational detail, not a design flaw.
-
----
-
-## What to Tell Recruiters
-
-> "Currently deployed in us-east-1. I have a documented multi-region strategy (Phase 1: passive standby) ready to implement in month 3-6 of production. For MVP, single region meets compliance and performance requirements."
-
-This shows:
-- ✅ You've thought about resilience
-- ✅ You have a plan
-- ✅ You know when to implement it (not too early)
-- ✅ You understand trade-offs (cost, complexity, RTO)
-
-That's SA-level thinking.
+For a single-region MVP the trade-off usually favours staying single-region until there is a real availability requirement; Phase 1 is the natural first move when that requirement appears. The Terraform changes for Phase 1 are scoped above at roughly 130 lines across four files, and are written here as a design — they have not been applied.
