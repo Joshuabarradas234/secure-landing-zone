@@ -2,7 +2,9 @@
 
 ## RTO/RPO Targets
 
-| Component | RTO | RPO | Recovery Method |
+*These are design targets, not measured recovery times — no DR test has been run yet (see the recovery-drill checklist near the end). Several rows below (management/security/workload accounts) describe the full multi-account design; only the single-account security stack has actually been deployed.*
+
+| Component | RTO (target) | RPO (target) | Recovery Method |
 |-----------|-----|-----|---|
 | **CloudTrail logs (S3 bucket)** | 1 hour | 5 minutes | S3 versioning restore |
 | **Security Hub findings** | 2 hours | N/A | Redeploy from Terraform, re-link accounts |
@@ -325,7 +327,7 @@ terraform apply  # Will modify only what's different
 - During active breach, open TAC case
 - Have AWS account IDs and resource ARNs ready
 
-**Your Team:**
+**Team contacts:**
 - **Terraform state owner:** Has access to backup S3 bucket
 - **AWS Organization owner:** Can modify OUs + SCPs if Terraform role fails
 - **Security lead:** Reviews logs and detects breach indicators
